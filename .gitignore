@@ -210,4 +210,3 @@ pyrightconfig.json
 /*
 !.gitignore
 !book_page_rank.py
-!book_page_rank.log
