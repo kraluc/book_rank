@@ -17,6 +17,8 @@ import csv
 import subprocess
 import json
 import pandas as pd
+from openpyxl.worksheet.table import Table, TableStyleInfo
+import time
 
 """ Web scraping script to extract English Books with fields, Title, Author, ID, Total Number of Pages, and rating from the website https://books.toscrape.com/ """
 
@@ -40,6 +42,7 @@ logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 
 # GLOBAL VARIABLES
+DEFAULT_QUERY = "high school literature"
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_BOOKS_API_URL = "https://www.googleapis.com/books/v1/volumes"
 OPEN_LIBRARY_API_URL = "https://openlibrary.org"
@@ -60,18 +63,25 @@ def googlebooks_search(query: str):
     logger.debug("url: %s", url)
 
     # Make the request to the Google Books API
-    response = requests.get(url)
-    logger.info("%s", response.json)
+    for attempt in range(5):  # Retry up to 5 times
+        response = requests.get(url)
+        logger.info("%s", response.json)
 
-    if response.status_code != 200:
-        logger.error(
-            f"Failed to fetch data from Google Books API: {response.status_code}"
-        )
-        sys.exit(1)
+        if response.status_code == 200:
+            # Parse the JSON response
+            data = response.json()
+            return data
+        elif response.status_code == 429:
+            logger.warning("Throttled by Google Books API. Retrying in 5 seconds...")
+            time.sleep(5)  # Wait for 5 seconds before retrying
+        else:
+            logger.error(
+                f"Failed to fetch data from Google Books API: {response.status_code}"
+            )
+            sys.exit(1)
 
-    # Parse the JSON response
-    data = response.json()
-    return data
+    logger.error("Exceeded maximum retry attempts for Google Books API.")
+    sys.exit(1)
 
 
 def open_library_search(query: str):
@@ -97,6 +107,7 @@ def open_library_search(query: str):
 
 def main(
     api: str = "openlibrary",
+    query: str = DEFAULT_QUERY,
     count: int = MAX_BOOKS,
     max_num_pages: int = MAX_NUM_PAGES,
     min_rating: float = MINIMUM_RATING,
@@ -107,7 +118,6 @@ def main(
     logger.info("Rating threshold: %.1f", min_rating)
 
     # Define the search query for openlibrary
-    query = "'high school literature' 'english language'"  # .replace(" ", "+")
     query += "&sort=rating&language:eng"
 
     logger.info("---------------- Query API -----------------")
@@ -132,7 +142,7 @@ def main(
             rating = book.get("volumeInfo", {}).get("averageRating", 0)
             language = book.get("volumeInfo", {}).get("language", "N/A")
             preview_url = book.get("volumeInfo", {}).get("previewLink", "N/A")
-            categories = book.get("volumeInfo", {}).get("categories", [])
+            description = book.get("volumeInfo", {}).get("description", [])
 
             if book.get("accessInfo", {}).get("epub", {}).get("isAvailable", False):
                 epub_url = (
@@ -163,7 +173,7 @@ def main(
                     "Preview": preview_url,
                     "EPUB": epub_url,
                     "PDF": pdf_url,
-                    "Categories": ", ".join(categories),
+                    "Description": ", ".join(description),
                 }
             )
 
@@ -179,9 +189,9 @@ def main(
             author = ", ".join(book.get("author_name", ["N/A"]))
             book_id = book.get("cover_edition_key", "N/A")
             num_pages = int(book.get("number_of_pages_median", "0"))
-            rating = float(book.get("ratings_average", "0"))
+            rating = "%2d" % float(book.get("ratings_average", "0"))
             language = book.get("language", "N/A")
-            categories = book.get("subject", ["N/A"])
+            description = book.get("subject", ["N/A"])
 
             if book_id == "N/A":
                 continue
@@ -193,7 +203,7 @@ def main(
                     "Total Number of Pages": num_pages,
                     "Rating": rating,
                     "Language": language,
-                    "Categories": ", ".join(categories),
+                    "Description": ", ".join(description),
                 }
             )
 
@@ -215,7 +225,7 @@ def main(
 
     # Sort the high_rating_books by low to high number of pages
     sorted_books = sorted(
-        high_rating_books, key=lambda x: int(x["Total Number of Pages"]), reverse=True
+        high_rating_books, key=lambda x: int(x["Total Number of Pages"]), reverse=False
     )
 
     # Get the books with available IDs that meet the desired criteria
@@ -253,7 +263,7 @@ def main(
             preview_url = googlebook.get("volumeInfo", {}).get("previewLink", "")
 
             logger.info("preview_url available: %s", preview_url)
-            categories = googlebook.get("volumeInfo", {}).get("categories", [])
+            description = googlebook.get("volumeInfo", {}).get("description", [])
 
             epub_url = (
                 googlebook.get("accessInfo", {}).get("epub", {}).get("acsTokenLink", "")
@@ -278,11 +288,11 @@ def main(
             else:
                 book["PDF"] = "N/A"
             logger.info("PDF URL: %s", pdf_url)
-            book["Categories"] = ", ".join(categories)
+            book["Description"] = description
 
             # Log the book information
             logger.info(
-                f"Book: {book['Title']}, Author: {book['Author']}, Pages: {book['Total Number of Pages']}, Rating: {book['Rating']}, Language: {book['Language']}, Categories: {book['Categories']} ,Preview: {book['Preview']}, EPUB: {book['EPUB']}, PDF: {book['PDF']}"
+                f"Book: {book['Title']}, Author: {book['Author']}, Pages: {book['Total Number of Pages']}, Rating: {book['Rating']}, Language: {book['Language']}, Description: {book['Description']} ,Preview: {book['Preview']}, EPUB: {book['EPUB']}, PDF: {book['PDF']}"
             )
 
     # Write the top books to a separate CSV file
@@ -296,11 +306,11 @@ def main(
                 "ID",
                 "Total Number of Pages",
                 "Rating",
-                "PDF",
                 "Preview",
+                "PDF",
+                "Description",
                 "EPUB",
                 "Language",
-                "Categories",
             ],
         )
         writer.writeheader()
@@ -315,18 +325,46 @@ def main(
 
         # Save it as an Excel file
         excel_output_file = top_books_output_file.replace(".csv", ".xlsx")
-        df.to_excel(
-            excel_output_file,
-            index=False,
-            freeze_panes=(1, 1),
-            sheet_name="book search",
-        )
 
-        # Open the Excel file
+        with pd.ExcelWriter(excel_output_file, engine="openpyxl", mode="w") as writer:
+            df.to_excel(
+                writer, sheet_name="book search", index=False, freeze_panes=(1, 1)
+            )
+
+            # Access the workbook and the worksheet
+            workbook = writer.book
+            worksheet = writer.sheets["book search"]
+
+            # Define the table range
+            table_range = f"A1:{chr(65 + len(df.columns) - 1)}{len(df) + 1}"
+
+            # Create a table with alternating color
+
+            table = Table(displayName="BookTable", ref=table_range)
+            style = TableStyleInfo(
+                name="TableStyleMedium9",
+                showFirstColumn=False,
+                showLastColumn=False,
+                showRowStripes=True,
+                showColumnStripes=False,
+            )
+            table.tableStyleInfo = style
+            worksheet.add_table(table)
+
+        # Force open the Excel file
         if sys.platform == "win32":
-            os.startfile(excel_output_file)
+            os.system(f'start excel "{excel_output_file}"')
+        elif sys.platform == "darwin":
+            subprocess.run(
+                [
+                    "open",
+                    "-a",
+                    "Microsoft Excel",
+                    excel_output_file,
+                ]
+            )
         else:
-            subprocess.run(["open", "-a", "Microsoft Excel.app", excel_output_file])
+            subprocess.run(["xdg-open", excel_output_file])
 
         logger.info(f"Top {count} books successfully written to {excel_output_file}")
     except Exception as e:
@@ -367,6 +405,14 @@ if __name__ == "__main__":
         default=250,
         help="Maximum number of pages for a book. Default is %d" % MAX_NUM_PAGES,
     )
+    # Add option to specify string query
+    parser.add_argument(
+        "-q",
+        "--query",
+        type=str,
+        default=DEFAULT_QUERY,
+        help="String query. Default is %r" % DEFAULT_QUERY,
+    )
     # Add option to specify the rating threshold
     parser.add_argument(
         "-r",
@@ -383,10 +429,11 @@ if __name__ == "__main__":
     MAX_num_pages = args.max_pages
     rating_threshold = args.rating_threshold
     api = args.api
+    query = args.query
 
     print("executing %r as a module", __file__)
     try:
-        main(api, Count, MAX_num_pages, rating_threshold)
+        main(api, query, Count, MAX_num_pages, rating_threshold)
         sys.exit(0)
     except KeyboardInterrupt:
         pass
