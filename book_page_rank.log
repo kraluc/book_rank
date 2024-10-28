@@ -1,0 +1,15 @@
+-------------- Logging started --------------
+Number of books: 10
+Max number of pages: 200
+Rating threshold: 4.0
+---------------- Query API -----------------
+<bound method Response.json of <Response [200]>>
+Number of high rating books: 1
+Book: '{"Title": "Alice\'s Adventures in Wonderland", "Author": "Lewis Carroll", "ID": "OL31754751M", "Total Number of Pages": 133, "Rating": 4.005618, "Chinese Translation": false}'
+preview_url: =HYPERLINK("https://archive.org/details/alicesadventur00carr", "Preview")
+epub_url: =HYPERLINK("https://archive.org/download/alicesadventur00carr/alicesadventur00carr.epub", "EPUB")
+pdf_url: =HYPERLINK("https://archive.org/download/alicesadventur00carr/alicesadventur00carr.pdf", "PDF")
+Title: Alice's Adventures in Wonderland, Author: Lewis Carroll, Pages: 133, Rating: 4.005618, Chinese Translation: False, Preview: =HYPERLINK("https://archive.org/details/alicesadventur00carr", "Preview"), EPUB: =HYPERLINK("https://archive.org/download/alicesadventur00carr/alicesadventur00carr.epub", "EPUB"), PDF: =HYPERLINK("https://archive.org/download/alicesadventur00carr/alicesadventur00carr.pdf", "PDF")
+Top 10 books successfully written to /Users/vincentricci/Documents/Development/PYTHON/bookselect/book_page_rank_top_20.csv
+Top 10 books successfully written to /Users/vincentricci/Documents/Development/PYTHON/bookselect/book_page_rank_top_20.xlsx
+Logging finished
