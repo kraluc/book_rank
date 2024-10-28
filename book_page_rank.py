@@ -18,6 +18,7 @@ import subprocess
 import json
 import pandas as pd
 from openpyxl.worksheet.table import Table, TableStyleInfo
+import openpyxl
 import time
 
 """ Web scraping script to extract English Books with fields, Title, Author, ID, Total Number of Pages, and rating from the website https://books.toscrape.com/ """
@@ -350,6 +351,28 @@ def main(
             )
             table.tableStyleInfo = style
             worksheet.add_table(table)
+
+            # Set header font color to white
+            for cell in worksheet["1:1"]:
+                cell.fill = openpyxl.styles.PatternFill(
+                    start_color="000000", end_color="000000", fill_type="solid"
+                )
+                cell.font = openpyxl.styles.Font(color="FFFFFF")
+
+            # Auto fit column size for all columns except column H
+            for column in worksheet.columns:
+                max_length = 0
+                column = [cell for cell in column]
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(cell.value)
+                    except:
+                        pass
+                adjusted_width = (max_length + 2) * 1.2
+                worksheet.column_dimensions[
+                    openpyxl.utils.get_column_letter(column[0].column)
+                ].width = adjusted_width
 
         # Force open the Excel file
         if sys.platform == "win32":
