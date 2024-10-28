@@ -50,6 +50,7 @@ OUTPUT_FILE = __file__.replace(".py", ".csv")
 MAX_NUM_PAGES = 300
 MINIMUM_RATING = 4.0
 MAX_BOOKS = 20
+HYPERLINK_TEMPLATE = '=HYPERLINK("%s", "%s")'
 
 
 def googlebooks_search(query: str):
@@ -218,11 +219,16 @@ def main(
     )
 
     # Get the books with available IDs that meet the desired criteria
+    if len(sorted_books) < count:
+        logger.warning(
+            f"Number of books with available IDs: {len(sorted_books)} is less than the desired count: {count}"
+        )
+        count = len(sorted_books)
     top_books = [book for book in sorted_books if book.get("ID") != "N/A"][:count]
 
     if api == "openlibrary":
         logger.info("*** Using GoogleBooks API to get missing attributes ***")
-        # Get the missing attributes for the top books
+        # Get the missing attributes for the top books using Google Books API
         for book in top_books:
 
             title = book.get("Title")
@@ -237,29 +243,40 @@ def main(
             googlebooks_books = googlebooks_data.get("items", [])
             logger.debug("Google Books: %s", json.dumps(googlebooks_books, indent=2))
 
+            if not googlebooks_books:
+                logger.warning("No books found in Google Books API response.")
+                continue
+
             googlebook = googlebooks_books[0]
 
             logger.info("VolumeInfo %r", googlebook.get("volumeInfo", {}))
-            preview_url = googlebook.get("volumeInfo", {}).get("previewLink", "N/A")
+            preview_url = googlebook.get("volumeInfo", {}).get("previewLink", "")
 
             logger.info("preview_url available: %s", preview_url)
             categories = googlebook.get("volumeInfo", {}).get("categories", [])
 
             epub_url = (
-                googlebook.get("accessInfo", {})
-                .get("epub", {})
-                .get("acsTokenLink", "N/A")
+                googlebook.get("accessInfo", {}).get("epub", {}).get("acsTokenLink", "")
             )
             logger.info("epub_url available: %s", epub_url)
-            pdf_url = googlebook.get("accessInfo", {}).get("webReaderLink", "N/A")
+            pdf_url = googlebook.get("accessInfo", {}).get("webReaderLink", "")
             logger.info("webReader url: %s", pdf_url)
 
             # Add preview to the book information
-            book["Preview"] = preview_url
+            if preview_url:
+                book["Preview"] = HYPERLINK_TEMPLATE % (preview_url, "preview_url")
+            else:
+                book["Preview"] = "N/A"
             logger.info("Preview URL: %s", preview_url)
-            book["EPUB"] = epub_url
+            if epub_url:
+                book["EPUB"] = HYPERLINK_TEMPLATE % (epub_url, "EPUB")
+            else:
+                book["EPUB"] = "N/A"
             logger.info("EPUB URL: %s", epub_url)
-            book["PDF"] = pdf_url
+            if pdf_url:
+                book["PDF"] = HYPERLINK_TEMPLATE % (pdf_url, "WebReaderLink")
+            else:
+                book["PDF"] = "N/A"
             logger.info("PDF URL: %s", pdf_url)
             book["Categories"] = ", ".join(categories)
 
@@ -298,7 +315,12 @@ def main(
 
         # Save it as an Excel file
         excel_output_file = top_books_output_file.replace(".csv", ".xlsx")
-        df.to_excel(excel_output_file, index=False, freeze_panes=(1, 1))
+        df.to_excel(
+            excel_output_file,
+            index=False,
+            freeze_panes=(1, 1),
+            sheet_name="book search",
+        )
 
         # Open the Excel file
         if sys.platform == "win32":
